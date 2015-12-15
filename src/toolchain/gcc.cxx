@@ -55,7 +55,7 @@ static pid_t run_preprocessor(char* argv[],
 
 	if (pipe(cpp_pipes) == -1)
 	{
-		std::cerr << "Unable to create pipe for cpp: "
+		std::cerr << "d2cc: Unable to create pipe for cpp: "
 			<< strerror(errno) << std::endl;
 		return false;
 	}
@@ -63,7 +63,7 @@ static pid_t run_preprocessor(char* argv[],
 	pid_t pid = fork();
 	if (pid == -1)
 	{
-		std::cerr << "Unable to fork() for preprocessor run: "
+		std::cerr << "d2cc: Unable to fork() for preprocessor run: "
 			<< strerror(errno) << std::endl;
 		return pid;
 	}
@@ -72,7 +72,7 @@ static pid_t run_preprocessor(char* argv[],
 	{
 		if (dup2(cpp_pipes[1], 1) == -1)
 		{
-			std::cerr << "Unable to replace stdout with a pipe: "
+			std::cerr << "d2cc: Unable to replace stdout with a pipe: "
 				<< strerror(errno) << std::endl;
 			exit(1);
 		}
@@ -84,7 +84,7 @@ static pid_t run_preprocessor(char* argv[],
 
 		if (execvp(compiler_path, argv))
 		{
-			std::cerr << "Unable to spawn preprocessor " << compiler_path
+			std::cerr << "d2cc: Unable to spawn preprocessor " << compiler_path
 				<< ": " << strerror(errno) << std::endl;
 			exit(1);
 		}
@@ -113,19 +113,19 @@ static bool run_remotely(char* argv[],
 	int ret;
 	if (waitpid(cpp_pid, &ret, 0) == -1)
 	{
-		std::cerr << "Unable to reap preprocessor: "
+		std::cerr << "d2cc: Unable to reap preprocessor: "
 			<< strerror(errno) << std::endl;
 		return false;
 	}
 
 	if (WEXITSTATUS(ret) != 0)
 	{
-		std::cerr << "The preprocessor returned non-zero exit status "
+		std::cerr << "d2cc: The preprocessor returned non-zero exit status "
 			<< WEXITSTATUS(ret) << std::endl;
 		return false;
 	}
 
-	std::cerr << "Remote protocol not implemented yet" << std::endl;
+	std::cerr << "d2cc: Remote protocol not implemented yet" << std::endl;
 
 	return false;
 }
@@ -208,7 +208,7 @@ int main(int argc, char* argv[])
 	{
 		if (run_remotely(argv, compiler_path, in_filename, out_filename))
 			return 0;
-		std::cerr << "Running locally instead ..." << std::endl;
+		std::cerr << "d2cc: Running locally instead ..." << std::endl;
 	}
 
 	// TODO: cleanse $PATH to avoid loop-spawning
@@ -216,7 +216,7 @@ int main(int argc, char* argv[])
 	// spawn the build directly
 	if (execvp(compiler_path, argv))
 	{
-		std::cerr << "Unable to spawn compiler " << compiler_path
+		std::cerr << "d2cc: Unable to spawn compiler " << compiler_path
 			<< ": " << strerror(errno) << std::endl;
 		return 1;
 	}
