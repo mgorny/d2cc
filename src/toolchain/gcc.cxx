@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <iterator>
 
 extern "C"
 {
@@ -16,6 +17,8 @@ extern "C"
 #	include <sys/wait.h>
 #	include <unistd.h>
 }
+
+#include "libd2cc/unixclient.h"
 
 static void mangle_argv_for_cpp(char* argv[])
 {
@@ -96,19 +99,74 @@ static pid_t run_preprocessor(char* argv[],
 	return pid;
 }
 
+static void get_compiler_argv(
+		const d2cc::protocol::ArgVMessage::argv_yield_func& yield,
+		const char* const* orig_argv)
+{
+	for (const char* const* it = &orig_argv[1]; *it; ++it)
+	{
+		const char* argp = *it;
+
+		// Does it look like an option?
+		if (argp[0] == '-' && argp[1] != '\0')
+		{
+			// -o indicates output file
+			if (argp[1] == 'o')
+			{
+				if (argp[2] != '\0') // inline parameter
+					yield("-o" D2CC_ARGV_OUTPUT_TAG);
+				else // split parameter
+				{
+					yield(argp);
+					yield(D2CC_ARGV_OUTPUT_TAG);
+					++it;
+				}
+				continue;
+			}
+			// skip preprecessor's make output magic (done locally)
+			else if (argp[1] == 'M')
+				continue;
+		}
+		else // input filename
+		{
+			yield(D2CC_ARGV_INPUT_TAG);
+			continue;
+		}
+
+		yield(argp);
+	}
+}
+
+static ssize_t read_cpp_pipe(int fd, uint8_t* buf, size_t buf_size)
+{
+	ssize_t ret = read(fd, buf, buf_size);
+	if (ret == -1)
+		std::cerr << "d2cc: Unable to read preprocessor pipe: "
+			<< strerror(errno) << std::endl;
+	return ret;
+}
+
 static bool run_remotely(char* argv[],
 		const char* compiler_path,
 		const char* in_filename,
 		const char* out_filename)
 {
+	d2cc::UNIXClient cl;
+	if (!cl.connect())
+		return false;
+
+	if (!cl.send_argv(std::bind(get_compiler_argv,
+					std::placeholders::_1, argv)))
+		return false;
+
 	int output_fd;
 	pid_t cpp_pid = run_preprocessor(argv, compiler_path, &output_fd);
 	if (cpp_pid == -1)
 		return false;
 
-	// TODO: implement the protocol
-	char buf[4096];
-	while (read(output_fd, buf, sizeof(buf)) > 0) {};
+	if (!cl.send_data(std::bind(read_cpp_pipe, output_fd,
+					std::placeholders::_1, std::placeholders::_2)))
+		return false;
 
 	int ret;
 	if (waitpid(cpp_pid, &ret, 0) == -1)
@@ -118,12 +176,15 @@ static bool run_remotely(char* argv[],
 		return false;
 	}
 
+
 	if (WEXITSTATUS(ret) != 0)
 	{
 		std::cerr << "d2cc: The preprocessor returned non-zero exit status "
 			<< WEXITSTATUS(ret) << std::endl;
 		return false;
 	}
+	if (!cl.finish_request())
+		return false;
 
 	std::cerr << "d2cc: Remote protocol not implemented yet" << std::endl;
 
